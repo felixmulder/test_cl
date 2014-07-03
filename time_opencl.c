@@ -207,7 +207,8 @@ static unsigned long time_opencl(void)
         clReleaseMemObject(res_buff);
         clReleaseCommandQueue(cmd_q);
         clReleaseContext(context);
-        
+
+        free(src_str);
         free(vec1);
         free(vec2);
         free(res);
