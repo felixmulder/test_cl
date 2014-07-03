@@ -54,6 +54,11 @@ static unsigned long time_opencl(void)
         char *src_str;
         size_t src_size;
 
+        int *vec1, *vec2, *res;
+        struct timeval start, stop;
+
+
+        /* OpenCL vars */
         cl_platform_id          platform_id;
         cl_device_id            dev_id;
         cl_uint                 num_devs;
@@ -68,9 +73,10 @@ static unsigned long time_opencl(void)
 
         cl_kernel               kernel;
         cl_program              prog;
+        
+        size_t                  work_size;
+        size_t                  group_size;
 
-        int *vec1, *vec2, *res;
-        struct timeval start, stop;
 
         /* allocate arrays */
         vec1    = malloc(sizeof(int) * LIST_SIZE);
@@ -106,8 +112,8 @@ static unsigned long time_opencl(void)
         platform_id     = NULL;
         dev_id          = NULL;
 
-        ret = clGetPlatformIDs(1, &platform_id, &num_platforms);
-        ret = clGetDeviceIDs(
+        clGetPlatformIDs(1, &platform_id, &num_platforms);
+        clGetDeviceIDs(
                 platform_id,
                 CL_DEVICE_TYPE_DEFAULT,
                 1,
@@ -148,12 +154,12 @@ static unsigned long time_opencl(void)
         );
 
         /* copy heap allocated buffers to resp cl buffer */
-        ret = clEnqueueWriteBuffer(
+        clEnqueueWriteBuffer(
                 cmd_q, vec1_buff, CL_TRUE, 0,
                 LIST_SIZE * sizeof(int), vec1, 0, NULL, NULL
         );
 
-        ret = clEnqueueWriteBuffer(
+        clEnqueueWriteBuffer(
                 cmd_q, vec1_buff, CL_TRUE, 0,
                 LIST_SIZE * sizeof(int), vec2, 0, NULL, NULL
         );
@@ -167,35 +173,40 @@ static unsigned long time_opencl(void)
         /* build program */
         ret = clBuildProgram(prog, 1, &dev_id, NULL, NULL, NULL);
 
+        if (ret != CL_SUCCESS) {
+                fprintf(stderr, "Couldn't build OCL program\n");
+                exit(1);
+        }
+
         /* create kernel */
         kernel = clCreateKernel(prog, "vector_add", &ret);
 
         /* set arguments of kernel */
-        ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&vec1_buff);
-        ret = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&vec2_buff);
-        ret = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&res_buff);
+        clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&vec1_buff);
+        clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&vec2_buff);
+        clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&res_buff);
 
         /* execute OpenCL kernel on the list */
-        size_t global_item_size = LIST_SIZE; /* run on entire list */
-        size_t local_item_size = 64; /* chunk size */
+        work_size        = LIST_SIZE;    /* run on entire list */
+        group_size       = 64;           /* chunk size */
 
         /* run on gpu */
         gettimeofday(&start, NULL);
         ret = clEnqueueNDRangeKernel(
-                cmd_q, kernel, 1, NULL, &global_item_size,
-                &local_item_size, 0, NULL, NULL
+                cmd_q, kernel, 1, NULL, &work_size,
+                &group_size, 0, NULL, NULL
         );
         gettimeofday(&stop, NULL);
 
-        ret = clFlush(cmd_q);
-        ret = clFinish(cmd_q);
-        ret = clReleaseKernel(kernel);
-        ret = clReleaseProgram(prog);
-        ret = clReleaseMemObject(vec1_buff);
-        ret = clReleaseMemObject(vec2_buff);
-        ret = clReleaseMemObject(res_buff);
-        ret = clReleaseCommandQueue(cmd_q);
-        ret = clReleaseContext(context);
+        clFlush(cmd_q);
+        clFinish(cmd_q);
+        clReleaseKernel(kernel);
+        clReleaseProgram(prog);
+        clReleaseMemObject(vec1_buff);
+        clReleaseMemObject(vec2_buff);
+        clReleaseMemObject(res_buff);
+        clReleaseCommandQueue(cmd_q);
+        clReleaseContext(context);
         
         free(vec1);
         free(vec2);
